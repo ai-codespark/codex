@@ -26,6 +26,7 @@
 - [Funding Opportunity](#funding-opportunity)
 - [Contributing](#contributing)
   - [Development workflow](#development-workflow)
+    - [Nix Flake Development](#nix-flake-development)
   - [Writing high‑impact code changes](#writing-highimpact-code-changes)
   - [Opening a pull request](#opening-a-pull-request)
   - [Review process](#review-process)
@@ -243,6 +244,8 @@ npm install -g @openai/codex
 yarn global add @openai/codex
 # or
 bun install -g @openai/codex
+# or
+pnpm add -g @openai/codex
 ```
 
 </details>
@@ -255,9 +258,12 @@ bun install -g @openai/codex
 git clone https://github.com/openai/codex.git
 cd codex/codex-cli
 
+# Enable corepack
+corepack enable
+
 # Install dependencies and build
-npm install
-npm run build
+pnpm install
+pnpm build
 
 # Get the usage and the options
 node ./dist/cli.js --help
@@ -266,7 +272,7 @@ node ./dist/cli.js --help
 node ./dist/cli.js
 
 # Or link the command globally for convenience
-npm link
+pnpm link
 ```
 
 </details>
@@ -275,13 +281,27 @@ npm link
 
 ## Configuration
 
-Codex looks for config files in **`~/.codex/`**.
+Codex looks for config files in **`~/.codex/`** (either YAML or JSON format).
 
 ```yaml
 # ~/.codex/config.yaml
 model: o4-mini # Default model
+approvalMode: suggest # or auto-edit, full-auto
 fullAutoErrorMode: ask-user # or ignore-and-continue
 notify: true # Enable desktop notifications for responses
+safeCommands:
+  - npm test # Automatically approve npm test
+  - yarn lint # Automatically approve yarn lint
+```
+
+```json
+// ~/.codex/config.json
+{
+  "model": "o4-mini",
+  "approvalMode": "suggest",
+  "fullAutoErrorMode": "ask-user",
+  "notify": true
+}
 ```
 
 You can also define custom instructions:
@@ -304,7 +324,6 @@ In 2021, OpenAI released Codex, an AI system designed to generate code from natu
 </details>
 
 <details>
-<details>
 <summary>Which models are supported?</summary>
 
 Any model available with [Responses API](https://platform.openai.com/docs/api-reference/responses). The default is `o4-mini`, but pass `--model gpt-4.1` or set `model: gpt-4.1` in your config file to override.
@@ -316,6 +335,8 @@ Any model available with [Responses API](https://platform.openai.com/docs/api-re
 It's possible that your [API account needs to be verified](https://help.openai.com/en/articles/10910291-api-organization-verification) in order to start streaming responses and seeing chain of thought summaries from the API. If you're still running into issues, please let us know!
 
 </details>
+
+<details>
 <summary>How do I stop Codex from editing my files?</summary>
 
 Codex runs model-generated commands in a sandbox. If a proposed command or file change doesn't look right, you can simply type **n** to deny the command or give the model feedback.
@@ -374,7 +395,7 @@ More broadly we welcome contributions – whether you are opening your very firs
 
 - Create a _topic branch_ from `main` – e.g. `feat/interactive-prompt`.
 - Keep your changes focused. Multiple unrelated fixes should be opened as separate PRs.
-- Use `npm run test:watch` during development for super‑fast feedback.
+- Use `pnpm test:watch` during development for super‑fast feedback.
 - We use **Vitest** for unit tests, **ESLint** + **Prettier** for style, and **TypeScript** for type‑checking.
 - Before pushing, run the full test/type/lint suite:
 
@@ -401,14 +422,39 @@ npm test && npm run lint && npm run typecheck
 
 ```bash
 # Watch mode (tests rerun on change)
-npm run test:watch
+pnpm test:watch
 
 # Type‑check without emitting files
-npm run typecheck
+pnpm typecheck
 
 # Automatically fix lint + prettier issues
-npm run lint:fix
-npm run format:fix
+pnpm lint:fix
+pnpm format:fix
+```
+
+#### Nix Flake Development
+
+Prerequisite: Nix >= 2.4 with flakes enabled (`experimental-features = nix-command flakes` in `~/.config/nix/nix.conf`).
+
+Enter a Nix development shell:
+
+```bash
+nix develop
+```
+
+This shell includes Node.js, installs dependencies, builds the CLI, and provides a `codex` command alias.
+
+Build and run the CLI directly:
+
+```bash
+nix build
+./result/bin/codex --help
+```
+
+Run the CLI via the flake app:
+
+```bash
+nix run .#codex
 ```
 
 ### Writing high‑impact code changes
@@ -473,13 +519,13 @@ To publish a new version of the CLI, run the release scripts defined in `codex-c
 
 1. Open the `codex-cli` directory
 2. Make sure you're on a branch like `git checkout -b bump-version`
-3. Bump the version and `CLI_VERSION` to current datetime: `npm run release:version`
+3. Bump the version and `CLI_VERSION` to current datetime: `pnpm release:version`
 4. Commit the version bump (with DCO sign-off):
    ```bash
    git add codex-cli/src/utils/session.ts codex-cli/package.json
    git commit -s -m "chore(release): codex-cli v$(node -p \"require('./codex-cli/package.json').version\")"
    ```
-5. Copy README, build, and publish to npm: `npm run release`
+5. Copy README, build, and publish to npm: `pnpm release`
 6. Push to branch: `git push origin HEAD`
 
 ---

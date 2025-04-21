@@ -2,7 +2,12 @@ import { getBaseUrl, getApiKey } from "./config";
 import OpenAI from "openai";
 
 const MODEL_LIST_TIMEOUT_MS = 2_000; // 2 seconds
-export const RECOMMENDED_MODELS: Array<string> = ["o4-mini", "o3"];
+export const RECOMMENDED_MODELS: Array<string> = [
+  "aliyun-deepseek-r1-distill-llama-70b",
+  "siliconflow-deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+  "vercel-gemini-2.0-flash",
+  "volcengine-deepseek-v3-241226"
+];
 
 /**
  * Background model loader / cache.

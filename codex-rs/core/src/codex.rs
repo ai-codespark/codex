@@ -4,7 +4,9 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 
 use crate::AuthManager;
 use crate::CodexAuth;
@@ -283,6 +285,7 @@ pub struct Codex {
     // Last known status of the agent.
     pub(crate) agent_status: watch::Receiver<AgentStatus>,
     pub(crate) session: Arc<Session>,
+    pub(crate) unknown_model_warning_emitted: AtomicBool,
 }
 
 /// Wrapper returned by [`Codex::spawn`] containing the spawned [`Codex`],
@@ -462,6 +465,7 @@ impl Codex {
             rx_event,
             agent_status: agent_status_rx,
             session,
+            unknown_model_warning_emitted: AtomicBool::new(false),
         };
 
         #[allow(deprecated)]
@@ -2135,7 +2139,9 @@ impl Session {
     }
 
     pub(crate) async fn maybe_emit_unknown_model_warning_for_turn(&self, tc: &TurnContext) {
-        if tc.model_info.used_fallback_model_metadata {
+        if tc.model_info.used_fallback_model_metadata
+            && !self.unknown_model_warning_emitted.swap(true, Ordering::Relaxed)
+        {
             self.send_event(
                 tc,
                 EventMsg::Warning(WarningEvent {

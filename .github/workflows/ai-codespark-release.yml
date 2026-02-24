@@ -118,6 +118,14 @@ jobs:
           if command -v ldconfig >/dev/null 2>&1; then
             ubsan="$(ldconfig -p | grep -m1 'libubsan\.so\.1' | sed -E 's/.*=> (.*)$/\1/')"
           fi
+          if [[ -z "${ubsan}" ]]; then
+            ubsan="$(find /usr/lib /lib -type f -name 'libubsan.so.1' 2>/dev/null | head -n1 || true)"
+          fi
+          if [[ -z "${ubsan}" ]]; then
+            echo "::warning::libubsan.so.1 not found; musl proc-macro loading may fail"
+          else
+            echo "Using libubsan at: ${ubsan}"
+          fi
           wrapper_root="${RUNNER_TEMP:-/tmp}"
           wrapper="${wrapper_root}/rustc-ubsan-wrapper"
           cat > "${wrapper}" <<EOF
@@ -129,6 +137,7 @@ jobs:
           exec "\$1" "\${@:2}"
           EOF
           chmod +x "${wrapper}"
+          echo "UBSAN_LIB=${ubsan}" >> "$GITHUB_ENV"
           echo "RUSTC_WRAPPER=${wrapper}" >> "$GITHUB_ENV"
           echo "RUSTC_WORKSPACE_WRAPPER=" >> "$GITHUB_ENV"
 
@@ -162,6 +171,10 @@ jobs:
       - name: Cargo build
         shell: bash
         run: |
+          set -euo pipefail
+          if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-musl" && -n "${UBSAN_LIB:-}" ]]; then
+            export LD_PRELOAD="${UBSAN_LIB}${LD_PRELOAD:+:${LD_PRELOAD}}"
+          fi
           cargo build --target ${{ matrix.target }} --release --timings --bin codex
 
       - name: Stage artifacts (Linux)

@@ -23,10 +23,11 @@ jobs:
 
           [[ -n "${RELEASE_TAG}" ]] \
             || { echo "❌ release.tag_name is empty"; exit 1; }
-          [[ "${RELEASE_TAG}" =~ ^codespark-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]] \
+          [[ "${RELEASE_TAG}" =~ ^(codespark-)?v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]] \
             || { echo "❌ Tag '${RELEASE_TAG}' doesn't match expected format"; exit 1; }
 
-          tag_ver="${RELEASE_TAG#codespark-v}"
+          tag_ver="${RELEASE_TAG#codespark-}"
+          tag_ver="${tag_ver#v}"
           cargo_ver="$(grep -m1 '^version' codex-rs/Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')"
 
           [[ "${tag_ver}" == "${cargo_ver}" ]] \
@@ -220,7 +221,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="${RELEASE_TAG#codespark-v}"
+          version="${RELEASE_TAG#codespark-}"
+          version="${version#v}"
           echo "name=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release

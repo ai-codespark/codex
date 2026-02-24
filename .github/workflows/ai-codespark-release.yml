@@ -1,0 +1,234 @@
+name: ai-codespark-release
+
+on:
+  release:
+    types:
+      - created
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  tag-check:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate tag matches Cargo.toml version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          [[ -n "${RELEASE_TAG}" ]] \
+            || { echo "❌ release.tag_name is empty"; exit 1; }
+          [[ "${RELEASE_TAG}" =~ ^codespark-v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta)(\.[0-9]+)?)?$ ]] \
+            || { echo "❌ Tag '${RELEASE_TAG}' doesn't match expected format"; exit 1; }
+
+          tag_ver="${RELEASE_TAG#codespark-v}"
+          cargo_ver="$(grep -m1 '^version' codex-rs/Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')"
+
+          [[ "${tag_ver}" == "${cargo_ver}" ]] \
+            || { echo "❌ Tag ${tag_ver} ≠ Cargo.toml ${cargo_ver}"; exit 1; }
+
+          echo "✅ Tag and Cargo.toml agree (${tag_ver})"
+
+  build:
+    needs: tag-check
+    name: Build - ${{ matrix.os }} - ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: codex-rs
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            release_binary_name: codex-x86_64-unknown-linux-musl
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            release_binary_name: codex-x86_64-apple-darwin.dmg
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            release_binary_name: codex-x86_64-pc-windows-msvc.exe
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Linux build dependencies
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends pkg-config libcap-dev libubsan1
+
+      - uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Use hermetic Cargo home (musl)
+        if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo_home="${GITHUB_WORKSPACE}/.cargo-home"
+          mkdir -p "${cargo_home}/bin"
+          echo "CARGO_HOME=${cargo_home}" >> "$GITHUB_ENV"
+          echo "${cargo_home}/bin" >> "$GITHUB_PATH"
+          : > "${cargo_home}/config.toml"
+
+      - name: Install Zig (musl)
+        if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.0
+
+      - name: Install musl build tools
+        if: ${{ matrix.target == 'x86_64-unknown-linux-musl' }}
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+
+      - name: Cargo build
+        shell: bash
+        run: |
+          cargo build --target ${{ matrix.target }} --release --timings --bin codex
+
+      - name: Stage artifacts (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="dist/${{ matrix.target }}"
+          mkdir -p "$dest"
+
+          cp target/${{ matrix.target }}/release/codex "$dest/${{ matrix.release_binary_name }}"
+
+      - name: Stage artifacts (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="dist/${{ matrix.target }}"
+          mkdir -p "$dest"
+
+          cp target/${{ matrix.target }}/release/codex.exe "$dest/${{ matrix.release_binary_name }}"
+
+      - name: Stage artifacts (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ matrix.target }}"
+          release_dir="target/${target}/release"
+          dest="dist/${target}"
+          dmg_root="${RUNNER_TEMP}/codex-dmg-root"
+          dmg_path="${dest}/${{ matrix.release_binary_name }}"
+
+          mkdir -p "$dest"
+          rm -rf "$dmg_root"
+          mkdir -p "$dmg_root"
+
+          codex_binary_path="${release_dir}/codex"
+          if [[ ! -f "$codex_binary_path" ]]; then
+            echo "Binary $codex_binary_path not found"
+            exit 1
+          fi
+
+          cp "$codex_binary_path" "${dmg_root}/codex"
+
+          rm -f "$dmg_path"
+          hdiutil create \
+            -volname "Codex (${target})" \
+            -srcfolder "$dmg_root" \
+            -format UDZO \
+            -ov \
+            "$dmg_path"
+
+          if [[ ! -f "$dmg_path" ]]; then
+            echo "dmg $dmg_path not found after build"
+            exit 1
+          fi
+
+      - name: Compress artifacts (Linux)
+        if: ${{ runner.os == 'Linux' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="dist/${{ matrix.target }}"
+          for f in "$dest"/*; do
+            base="$(basename "$f")"
+            tar -C "$dest" -czf "$dest/${base}.tar.gz" "$base"
+            zstd -T0 -19 --rm "$dest/$base"
+          done
+
+      - name: Compress artifacts (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="dist/${{ matrix.target }}"
+          for f in "$dest"/*; do
+            base="$(basename "$f")"
+            tar -C "$dest" -czf "$dest/${base}.tar.gz" "$base"
+            (cd "$dest" && 7z a "${base}.zip" "$base")
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.release_binary_name }}
+          path: codex-rs/dist/${{ matrix.target }}/*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      GH_TOKEN: ${{ secrets.AI_CODESPARK_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.AI_CODESPARK_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Generate release notes from tag commit message
+        id: release_notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git rev-parse "${RELEASE_TAG}^{commit}")"
+          notes_path="${RUNNER_TEMP}/release-notes.md"
+          git log -1 --format=%B "${commit}" > "${notes_path}"
+          echo >> "${notes_path}"
+          echo "path=${notes_path}" >> "${GITHUB_OUTPUT}"
+
+      - uses: actions/download-artifact@v7
+        with:
+          path: dist
+
+      - name: Define release name
+        id: release_name
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#codespark-v}"
+          echo "name=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.AI_CODESPARK_TOKEN }}
+          name: ${{ steps.release_name.outputs.name }}
+          tag_name: ${{ github.event.release.tag_name }}
+          body_path: ${{ steps.release_notes.outputs.path }}
+          files: dist/**
+          prerelease: ${{ contains(steps.release_name.outputs.name, '-') }}

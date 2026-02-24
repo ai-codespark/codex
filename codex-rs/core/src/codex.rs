@@ -285,7 +285,6 @@ pub struct Codex {
     // Last known status of the agent.
     pub(crate) agent_status: watch::Receiver<AgentStatus>,
     pub(crate) session: Arc<Session>,
-    pub(crate) unknown_model_warning_emitted: AtomicBool,
 }
 
 /// Wrapper returned by [`Codex::spawn`] containing the spawned [`Codex`],
@@ -465,7 +464,6 @@ impl Codex {
             rx_event,
             agent_status: agent_status_rx,
             session,
-            unknown_model_warning_emitted: AtomicBool::new(false),
         };
 
         #[allow(deprecated)]
@@ -546,6 +544,7 @@ pub(crate) struct Session {
     pub(crate) services: SessionServices,
     js_repl: Arc<JsReplHandle>,
     next_internal_sub_id: AtomicU64,
+    unknown_model_warning_emitted: AtomicBool,
 }
 
 #[derive(Clone, Debug)]
@@ -1398,6 +1397,7 @@ impl Session {
             services,
             js_repl,
             next_internal_sub_id: AtomicU64::new(0),
+            unknown_model_warning_emitted: AtomicBool::new(false),
         });
         if let Some(network_policy_decider_session) = network_policy_decider_session {
             let mut guard = network_policy_decider_session.write().await;
@@ -8219,6 +8219,7 @@ mod tests {
             services,
             js_repl,
             next_internal_sub_id: AtomicU64::new(0),
+            unknown_model_warning_emitted: AtomicBool::new(false),
         };
 
         (session, turn_context)
@@ -8374,6 +8375,7 @@ mod tests {
             services,
             js_repl,
             next_internal_sub_id: AtomicU64::new(0),
+            unknown_model_warning_emitted: AtomicBool::new(false),
         });
 
         (session, turn_context, rx_event)

@@ -53,9 +53,6 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             release_binary_name: codex-x86_64-unknown-linux-musl
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            release_binary_name: codex-x86_64-apple-darwin.dmg
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             release_binary_name: codex-x86_64-pc-windows-msvc.exe
@@ -196,42 +193,6 @@ jobs:
           mkdir -p "$dest"
 
           cp target/${{ matrix.target }}/release/codex.exe "$dest/${{ matrix.release_binary_name }}"
-
-      - name: Stage artifacts (macOS)
-        if: ${{ runner.os == 'macOS' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          target="${{ matrix.target }}"
-          release_dir="target/${target}/release"
-          dest="dist/${target}"
-          dmg_root="${RUNNER_TEMP}/codex-dmg-root"
-          dmg_path="${dest}/${{ matrix.release_binary_name }}"
-
-          mkdir -p "$dest"
-          rm -rf "$dmg_root"
-          mkdir -p "$dmg_root"
-
-          codex_binary_path="${release_dir}/codex"
-          if [[ ! -f "$codex_binary_path" ]]; then
-            echo "Binary $codex_binary_path not found"
-            exit 1
-          fi
-
-          cp "$codex_binary_path" "${dmg_root}/codex"
-
-          rm -f "$dmg_path"
-          hdiutil create \
-            -volname "Codex (${target})" \
-            -srcfolder "$dmg_root" \
-            -format UDZO \
-            -ov \
-            "$dmg_path"
-
-          if [[ ! -f "$dmg_path" ]]; then
-            echo "dmg $dmg_path not found after build"
-            exit 1
-          fi
 
       - name: Compress artifacts (Linux)
         if: ${{ runner.os == 'Linux' }}
